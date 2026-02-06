@@ -399,5 +399,3 @@ Human approves → Result saved
 - Rate limiting & API authentication
 
 ---
-
-**This architecture transforms a single-use demo into a production-ready, general-purpose multi-agent framework.**

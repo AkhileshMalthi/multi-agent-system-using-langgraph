@@ -51,7 +51,7 @@ services:
       test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
       interval: 10s
       timeout: 5s
-      retries: 3
+      retries: 5
 
   # 4. Worker Service (Celery)
   worker:

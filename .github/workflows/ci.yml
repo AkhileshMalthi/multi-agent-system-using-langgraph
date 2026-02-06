@@ -47,15 +47,31 @@ jobs:
           EOF
       
       - name: Start Docker services
-        run: docker-compose up -d --wait
+        run: docker-compose up -d --wait --wait-timeout 120
       
       - name: Check Docker services
         run: docker-compose ps
 
+      - name: Check API container logs
+        run: docker-compose logs api
+
+      - name: Inspect API container
+        run: docker inspect $(docker-compose ps -q api)
+
       - name: Wait for API health
         run: |
           echo "Waiting for API to be ready..."
-          timeout 60s bash -c 'until curl -f http://localhost:8000/health; do sleep 2; done'
+          for i in {1..30}; do
+            if curl -f http://localhost:8000/health; then
+              echo "API is ready!"
+              exit 0
+            fi
+            echo "Attempt $i: API not ready yet..."
+            sleep 2
+          done
+          echo "API failed to start within 60 seconds"
+          docker-compose logs api
+          exit 1
       
       - name: Run End-to-End Tests
         run: uv run pytest tests/test_e2e.py -v -m e2e --tb=short

@@ -16,27 +16,7 @@ This system allows **collaborative AI agents** to work together to solve complex
 
 ## Architecture
 
-```mermaid
-graph TB
-    subgraph "General Purpose Workflow"
-        User[User] -->|Prompt| API[FastAPI]
-        API -->|Task| Workflow[LangGraph Engine]
-        
-        Workflow --> Analyzer[Prompt Analyzer<br/>(LLM-Guided)]
-        Analyzer -->|Topics + Goal| Research[Research Agent]
-        
-        Research -->|Dynamic Queries| Tools[Tool Registry]
-        Tools -->|Real Info| Workspace[(Redis Shared Memory)]
-        
-        Workspace --> Writing[Writing Agent]
-        Writing -->|Draft| Approval[Human Approval]
-        
-        Approval -->|Approved| Result[Final Output]
-    end
-    
-    style Analyzer fill:#95e1d3
-    style Tools fill:#4ecdc4
-```
+![System Architecture](assets/System%20Architecture.png)
 
 See [ARCHITECTURE.md](ARCHITECTURE.md) for detailed diagrams and component breakdown.
 
