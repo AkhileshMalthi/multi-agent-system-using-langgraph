@@ -1,96 +1,46 @@
-"""Search tools for the research agent."""
+"""Tools available to agents for performing research and actions."""
 
 import os
 from typing import Any
-
 from langchain_core.tools import tool
-
-# Track flaky tool call attempts for testing retry behavior
-_flaky_call_counts: dict[str, int] = {}
+from src.shared.llm_provider import get_llm
 
 
-def reset_flaky_counts() -> None:
-    """Reset the flaky call counter (for testing)."""
-    global _flaky_call_counts
-    _flaky_call_counts = {}
+# Global counter for tracking flaky tool behavior (for testing)
+_flaky_call_counts = {}
 
 
 @tool
-def search_langgraph_features(query: str) -> str:
+def llm_research(query: str) -> str:
     """
-    Search for information about LangGraph features.
+    Use LLM's knowledge to research a topic and provide comprehensive information.
+    
+    This is a real research tool that uses the LLM to generate detailed, accurate
+    information about any topic based on its training data.
     
     Args:
-        query: The search query about LangGraph
+        query: The research query or topic to investigate
         
     Returns:
-        Information about LangGraph features
+        Comprehensive information about the topic
     """
-    # Simulated search results for LangGraph
-    return """
-    LangGraph Key Features:
+    llm = get_llm(temperature=0.7)
     
-    1. **Stateful Graph Architecture**: LangGraph uses a graph-based approach where nodes
-       represent agents or processing steps, and edges define the flow between them.
-       State is passed and updated as execution flows through the graph.
-    
-    2. **Built-in Persistence**: Supports checkpointers for saving and restoring workflow
-       state, enabling durable execution that can survive failures.
-    
-    3. **Human-in-the-Loop**: Native support for interrupts that pause execution and wait
-       for human input before continuing. Uses the `interrupt()` function and `Command(resume=...)`
-       pattern.
-    
-    4. **Conditional Routing**: Edges can be conditional, allowing dynamic routing based on
-       state. Supports `add_conditional_edges()` for complex branching logic.
-    
-    5. **Integration with LangChain**: Seamlessly integrates with LangChain tools, models,
-       and memory components.
-    
-    6. **Streaming Support**: Real-time streaming of intermediate results as the workflow
-       progresses.
-    
-    7. **Multi-Agent Coordination**: Built specifically for orchestrating multiple agents
-       working together on complex tasks.
-    """
+    research_prompt = f"""You are a technical research assistant. Provide comprehensive, accurate information about the following topic:
 
+{query}
 
-@tool  
-def search_crewai_features(query: str) -> str:
-    """
-    Search for information about CrewAI features.
-    
-    Args:
-        query: The search query about CrewAI
-        
-    Returns:
-        Information about CrewAI features
-    """
-    # Simulated search results for CrewAI
-    return """
-    CrewAI Key Features:
-    
-    1. **Role-Based Agents**: Agents are defined with specific roles, goals, and backstories,
-       making them specialized for particular tasks. Each agent has a clear purpose.
-    
-    2. **Task-Oriented Design**: Work is organized as tasks that are assigned to agents.
-       Tasks can have dependencies and expected outputs.
-    
-    3. **Crew Orchestration**: A "Crew" coordinates multiple agents, managing task delegation
-       and execution order automatically.
-    
-    4. **Sequential and Hierarchical Processes**: Supports different execution patterns -
-       sequential (one after another) or hierarchical (manager delegates to workers).
-    
-    5. **Tool Integration**: Agents can use tools to interact with external systems,
-       APIs, and data sources.
-    
-    6. **Memory Systems**: Supports short-term, long-term, and entity memory for agents
-       to remember context across interactions.
-    
-    7. **Easy Agent Definition**: Simple, declarative syntax for defining agents and their
-       capabilities using Python classes.
-    """
+Your response should include:
+1. **Overview**: Brief introduction and context
+2. **Key Features**: Main characteristics and capabilities
+3. **Use Cases**: Common applications and scenarios
+4. **Technical Details**: Important technical aspects
+5. **Strengths**: Main advantages and benefits
+
+Be specific, technical, and comprehensive. Focus on factual information."""
+
+    response = llm.invoke(research_prompt)
+    return response.content
 
 
 @tool
@@ -101,14 +51,13 @@ def search_general(query: str) -> str:
     For the query "__FLAKY_TEST__", this tool will fail on the first call
     but succeed on subsequent calls, demonstrating retry resilience.
     
+    For other queries, uses LLM-based research.
+    
     Args:
         query: The search query
         
     Returns:
-        Search results or error
-        
-    Raises:
-        RuntimeError: On first call with "__FLAKY_TEST__" query
+        Search results or research findings
     """
     global _flaky_call_counts
     
@@ -128,13 +77,41 @@ def search_general(query: str) -> str:
             # Subsequent calls succeed
             return f"Flaky search succeeded on attempt {current_count + 1}: Results for '{query}'"
     
-    # Default behavior for other queries
-    return f"General search results for: {query}"
+    # For normal queries, use LLM research
+    return llm_research.invoke(query)
 
 
-# List of all available tools
-RESEARCH_TOOLS = [
-    search_langgraph_features,
-    search_crewai_features,
+# Tool registry for dynamic selection
+AVAILABLE_TOOLS = [
+    llm_research,
     search_general,
 ]
+
+
+def get_tool_by_name(name: str) -> Any:
+    """
+    Get a tool by name from the registry.
+    
+    Args:
+        name: Tool name
+        
+    Returns:
+        Tool function
+        
+    Raises:
+        ValueError: If tool not found
+    """
+    for tool in AVAILABLE_TOOLS:
+        if tool.name == name:
+            return tool
+    raise ValueError(f"Tool '{name}' not found in registry")
+
+
+def list_available_tools() -> list[str]:
+    """
+    List all available tool names.
+    
+    Returns:
+        List of tool names
+    """
+    return [tool.name for tool in AVAILABLE_TOOLS]
