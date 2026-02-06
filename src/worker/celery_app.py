@@ -1,7 +1,7 @@
 """Celery worker for background task processing."""
 
 import os
-import asyncio
+import uuid
 from typing import Any
 
 from celery import Celery
@@ -9,14 +9,8 @@ from celery import Celery
 from src.agents.workflow import run_workflow, get_interrupt_info
 from src.agents.state import WorkflowStatus
 from src.shared.logger import log_agent_action
-from src.database.connection import async_session_maker
-from src.database.crud import (
-    get_task,
-    update_task_status,
-    update_task_result,
-    append_agent_log,
-)
-from src.database.models import TaskStatus
+from src.database.connection import get_sync_db
+from src.database.models import Task, TaskStatus
 
 
 # Create Celery app
@@ -37,30 +31,32 @@ celery_app.conf.update(
 )
 
 
-def run_async(coro):
-    """Helper to run async functions in sync context."""
-    loop = asyncio.new_event_loop()
-    try:
-        return loop.run_until_complete(coro)
-    finally:
-        loop.close()
+def _update_task_db(task_id: str, status: TaskStatus, result: str | None = None):
+    """Update task in database (sync version for Celery)."""
+    with get_sync_db() as session:
+        task = session.query(Task).filter(Task.id == uuid.UUID(task_id)).first()
+        if task:
+            task.status = status.value
+            if result is not None:
+                task.result = result
 
 
-async def _update_task_db(task_id: str, status: TaskStatus, result: str | None = None):
-    """Update task in database."""
-    async with async_session_maker() as session:
-        if result is not None:
-            await update_task_result(session, task_id, result, status)
-        else:
-            await update_task_status(session, task_id, status)
-        await session.commit()
-
-
-async def _append_log(task_id: str, agent: str, action: str):
-    """Append log entry to task."""
-    async with async_session_maker() as session:
-        await append_agent_log(session, task_id, agent, action)
-        await session.commit()
+def _append_log(task_id: str, agent: str, action: str):
+    """Append log entry to task (sync version for Celery)."""
+    from datetime import datetime, timezone
+    
+    with get_sync_db() as session:
+        task = session.query(Task).filter(Task.id == uuid.UUID(task_id)).first()
+        if task:
+            if task.agent_logs is None:
+                task.agent_logs = []
+            
+            log_entry = {
+                "agent": agent,
+                "action": action,
+                "timestamp": datetime.now(timezone.utc).isoformat(),
+            }
+            task.agent_logs = task.agent_logs + [log_entry]
 
 
 @celery_app.task(bind=True, max_retries=3)
@@ -83,13 +79,13 @@ def execute_workflow(self, task_id: str, prompt: str) -> dict[str, Any]:
     """
     try:
         # Update status to RUNNING
-        run_async(_update_task_db(task_id, TaskStatus.RUNNING))
+        _update_task_db(task_id, TaskStatus.RUNNING)
         log_agent_action(task_id, "Orchestrator", "Starting workflow execution")
-        run_async(_append_log(task_id, "Orchestrator", "Starting workflow execution"))
+        _append_log(task_id, "Orchestrator", "Starting workflow execution")
         
         # Log research start
         log_agent_action(task_id, "ResearchAgent", "Searching for LangGraph features")
-        run_async(_append_log(task_id, "ResearchAgent", "Searching for LangGraph features"))
+        _append_log(task_id, "ResearchAgent", "Searching for LangGraph features")
         
         # Run the workflow
         result = run_workflow(task_id, prompt)
@@ -99,15 +95,15 @@ def execute_workflow(self, task_id: str, prompt: str) -> dict[str, Any]:
         
         # Log writing
         log_agent_action(task_id, "WritingAgent", "Drafting comparison summary")
-        run_async(_append_log(task_id, "WritingAgent", "Drafting comparison summary"))
+        _append_log(task_id, "WritingAgent", "Drafting comparison summary")
         
         # Check if workflow was interrupted (waiting for approval)
         interrupt_info = get_interrupt_info(result)
         if interrupt_info:
             # Workflow paused for approval
-            run_async(_update_task_db(task_id, TaskStatus.AWAITING_APPROVAL))
+            _update_task_db(task_id, TaskStatus.AWAITING_APPROVAL)
             log_agent_action(task_id, "Orchestrator", "Workflow paused for approval", "awaiting_approval")
-            run_async(_append_log(task_id, "Orchestrator", "Awaiting human approval"))
+            _append_log(task_id, "Orchestrator", "Awaiting human approval")
             return {
                 "status": "AWAITING_APPROVAL",
                 "task_id": task_id,
@@ -119,11 +115,11 @@ def execute_workflow(self, task_id: str, prompt: str) -> dict[str, Any]:
         final_result = result.get("result", "")
         
         if final_status == WorkflowStatus.COMPLETED:
-            run_async(_update_task_db(task_id, TaskStatus.COMPLETED, final_result))
+            _update_task_db(task_id, TaskStatus.COMPLETED, final_result)
             log_agent_action(task_id, "Orchestrator", "Workflow completed successfully", "completed")
-            run_async(_append_log(task_id, "Orchestrator", "Workflow completed"))
+            _append_log(task_id, "Orchestrator", "Workflow completed")
         else:
-            run_async(_update_task_db(task_id, TaskStatus.FAILED, result.get("error", "")))
+            _update_task_db(task_id, TaskStatus.FAILED, result.get("error", ""))
             log_agent_action(task_id, "Orchestrator", f"Workflow failed: {result.get('error', '')}", "failed")
         
         return {
@@ -135,7 +131,7 @@ def execute_workflow(self, task_id: str, prompt: str) -> dict[str, Any]:
     except Exception as e:
         # Handle errors
         error_msg = str(e)
-        run_async(_update_task_db(task_id, TaskStatus.FAILED))
+        _update_task_db(task_id, TaskStatus.FAILED)
         log_agent_action(task_id, "Orchestrator", f"Workflow error: {error_msg}", "error")
         
         # Retry on transient errors
@@ -164,9 +160,9 @@ def resume_workflow(self, task_id: str, approved: bool, feedback: str = "") -> d
     """
     try:
         # Update status to RESUMED
-        run_async(_update_task_db(task_id, TaskStatus.RESUMED))
+        _update_task_db(task_id, TaskStatus.RESUMED)
         log_agent_action(task_id, "Orchestrator", f"Resuming workflow (approved={approved})")
-        run_async(_append_log(task_id, "Orchestrator", f"Human approval received: {'Approved' if approved else 'Rejected'}"))
+        _append_log(task_id, "Orchestrator", f"Human approval received: {'Approved' if approved else 'Rejected'}")
         
         # Resume the workflow with approval response
         resume_value = {"approved": approved, "feedback": feedback}
@@ -177,12 +173,12 @@ def resume_workflow(self, task_id: str, approved: bool, feedback: str = "") -> d
         final_result = result.get("result", "")
         
         if final_status == WorkflowStatus.COMPLETED:
-            run_async(_update_task_db(task_id, TaskStatus.COMPLETED, final_result))
+            _update_task_db(task_id, TaskStatus.COMPLETED, final_result)
             log_agent_action(task_id, "Orchestrator", "Workflow completed successfully", "completed")
-            run_async(_append_log(task_id, "Orchestrator", "Workflow completed"))
+            _append_log(task_id, "Orchestrator", "Workflow completed")
         else:
             error = result.get("error", "Approval rejected")
-            run_async(_update_task_db(task_id, TaskStatus.FAILED))
+            _update_task_db(task_id, TaskStatus.FAILED)
             log_agent_action(task_id, "Orchestrator", f"Workflow ended: {error}", "failed")
         
         return {
@@ -193,7 +189,7 @@ def resume_workflow(self, task_id: str, approved: bool, feedback: str = "") -> d
         
     except Exception as e:
         error_msg = str(e)
-        run_async(_update_task_db(task_id, TaskStatus.FAILED))
+        _update_task_db(task_id, TaskStatus.FAILED)
         log_agent_action(task_id, "Orchestrator", f"Resume error: {error_msg}", "error")
         
         return {
