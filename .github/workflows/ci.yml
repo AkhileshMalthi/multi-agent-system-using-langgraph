@@ -49,6 +49,9 @@ jobs:
       - name: Start Docker services
         run: docker-compose up -d --wait
       
+      - name: Check Docker services
+        run: docker-compose ps
+
       - name: Wait for API health
         run: |
           echo "Waiting for API to be ready..."
@@ -62,8 +65,8 @@ jobs:
       - name: View logs on failure
         if: failure()
         run: |
-          docker-compose logs api --tail=100
-          docker-compose logs worker --tail=100
+          docker-compose logs --tail=100 api
+          docker-compose logs --tail=100 worker
       
       - name: Cleanup
         if: always()
