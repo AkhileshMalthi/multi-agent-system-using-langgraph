@@ -56,7 +56,14 @@ jobs:
         run: docker-compose logs api
 
       - name: Inspect API container
-        run: docker inspect $(docker-compose ps -q api)
+        if: always()
+        run: |
+          CONTAINER_ID=$(docker-compose ps -q api)
+          if [ -n "$CONTAINER_ID" ]; then
+            docker inspect $CONTAINER_ID
+          else
+            echo "API container is not running."
+          fi
 
       - name: Wait for API health
         run: |
