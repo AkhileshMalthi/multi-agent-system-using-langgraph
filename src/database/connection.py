@@ -2,7 +2,10 @@
 
 import os
 from collections.abc import AsyncGenerator
+from contextlib import contextmanager
 
+from sqlalchemy import create_engine
+from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.ext.asyncio import (
     AsyncSession,
     async_sessionmaker,
@@ -25,17 +28,31 @@ if DATABASE_URL.startswith("postgresql://"):
 else:
     ASYNC_DATABASE_URL = DATABASE_URL
 
-# Create async engine
+# Create async engine for API
 engine = create_async_engine(
     ASYNC_DATABASE_URL,
     echo=False,  # Set to True for SQL debugging
     pool_pre_ping=True,  # Verify connections before use
 )
 
-# Session factory
+# Async session factory for API
 async_session_maker = async_sessionmaker(
     engine,
     class_=AsyncSession,
+    expire_on_commit=False,
+)
+
+# Create sync engine for Celery workers (to avoid event loop issues)
+sync_engine = create_engine(
+    DATABASE_URL,
+    echo=False,
+    pool_pre_ping=True,
+)
+
+# Sync session factory for Celery workers
+sync_session_maker = sessionmaker(
+    sync_engine,
+    class_=Session,
     expire_on_commit=False,
 )
 
@@ -56,6 +73,26 @@ async def get_db() -> AsyncGenerator[AsyncSession, None]:
         except Exception:
             await session.rollback()
             raise
+
+
+@contextmanager
+def get_sync_db():
+    """
+    Context manager for sync database sessions (for Celery workers).
+    
+    Usage:
+        with get_sync_db() as db:
+            task = db.query(Task).filter_by(id=task_id).first()
+    """
+    session = sync_session_maker()
+    try:
+        yield session
+        session.commit()
+    except Exception:
+        session.rollback()
+        raise
+    finally:
+        session.close()
 
 
 async def init_db() -> None:
