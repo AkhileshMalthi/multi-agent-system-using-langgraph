@@ -14,7 +14,7 @@ init:
 			uv init --python ${PYTHON_VERSION}; \
 		fi; \
 	fi) > /tmp/init.log 2>&1
-	@echo "✓ Initialization complete (log: /tmp/init.log)"
+	@echo "Initialization complete (log: /tmp/init.log)"
 
 # Ensure ipykernel is installed as a dev dependency (optional)
 ensure-ipykernel:
@@ -27,7 +27,7 @@ ensure-ipykernel:
 				echo "ipykernel already present; skipping installation."; \
 			fi \
 		) > /tmp/jupyter-kernel.log 2>&1; \
-		echo "✓ ipykernel check complete (log: /tmp/jupyter-kernel.log)"; \
+		echo "ipykernel check complete (log: /tmp/jupyter-kernel.log)"; \
 	else \
 		echo "Skipping ipykernel installation (INSTALL_IPYKERNEL != true)"; \
 	fi
@@ -36,13 +36,13 @@ ensure-ipykernel:
 test-tools:
 	@echo "Running tool verification..."
 	@bash .devcontainer/test_tools.sh > /tmp/test-tools.log 2>&1
-	@echo "✓ Tool verification complete (log: /tmp/test-tools.log)"
+	@echo "Tool verification complete (log: /tmp/test-tools.log)"
 
 # Sync dependencies with uv
 sync:
 	@echo "Syncing dependencies..."
 	@uv sync > /tmp/uv-sync.log 2>&1
-	@echo "✓ Dependency sync complete (log: /tmp/uv-sync.log)"
+	@echo "Dependency sync complete (log: /tmp/uv-sync.log)"
 
 # Run ruff linter
 lint:
@@ -59,25 +59,25 @@ type-check:
 # Download Python .gitignore from GitHub
 gitignore:
 	@if [ -f .gitignore ]; then \
-		echo "⚠️  .gitignore already exists, skipping"; \
+		echo ".gitignore already exists, skipping"; \
 	else \
 		( \
-			echo "📥 Downloading Python .gitignore from GitHub..."; \
+			echo "Downloading Python .gitignore from GitHub..."; \
 			curl -fsSL https://raw.githubusercontent.com/github/gitignore/main/Python.gitignore -o .gitignore; \
-			echo "✅ .gitignore created"; \
+			echo ".gitignore created"; \
 		) > /tmp/gitignore.log 2>&1; \
-		echo "✓ .gitignore download complete (log: /tmp/gitignore.log)"; \
+		echo ".gitignore download complete (log: /tmp/gitignore.log)"; \
 	fi
 
 # Install dev tools (ruff, mypy)
 dev-tools:
 	@echo "Installing dev tools (ruff, mypy)..."
 	@uv add --dev ruff mypy > /tmp/dev-tools.log 2>&1
-	@echo "✓ Dev tools installed (log: /tmp/dev-tools.log)"
+	@echo "Dev tools installed (log: /tmp/dev-tools.log)"
 
 # Freeze dependencies to tmp folder
 freeze:
 	@echo "Freezing dependencies..."
 	@echo "# Generated on $$(date)" > /tmp/requirements.txt
 	@uv pip freeze >> /tmp/requirements.txt
-	@echo "✓ Dependencies frozen (log: /tmp/requirements.txt)"
+	@echo "Dependencies frozen (log: /tmp/requirements.txt)"

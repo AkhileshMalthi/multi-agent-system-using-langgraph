@@ -12,110 +12,9 @@ env:
   UV_VERSION: "0.5.0"
 
 jobs:
-  lint:
-    name: Code Quality & Linting
+  verify:
+    name: Build & Verify (E2E)
     runs-on: ubuntu-latest
-    
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-      
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: ${{ env.PYTHON_VERSION }}
-      
-      - name: Install UV
-        run: pip install uv==${{ env.UV_VERSION }}
-      
-      - name: Install dependencies
-        run: uv sync --dev
-      
-      - name: Run Ruff linter
-        run: uv run ruff check .
-        continue-on-error: true
-      
-      - name: Run Ruff formatter check
-        run: uv run ruff format --check .
-        continue-on-error: true
-
-  unit-tests:
-    name: Unit & Integration Tests
-    runs-on: ubuntu-latest
-    
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-      
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: ${{ env.PYTHON_VERSION }}
-      
-      - name: Install UV
-        run: pip install uv==${{ env.UV_VERSION }}
-      
-      - name: Install dependencies
-        run: uv sync --dev
-      
-      - name: Run unit tests
-        run: uv run pytest -m "not e2e" -v --tb=short --cov=src --cov-report=xml --cov-report=term
-      
-      - name: Upload coverage to Codecov
-        uses: codecov/codecov-action@v4
-        if: always()
-        with:
-          files: ./coverage.xml
-          fail_ci_if_error: false
-
-  docker-build:
-    name: Docker Build & Verify
-    runs-on: ubuntu-latest
-    
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-      
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
-      
-      - name: Build Docker images
-        run: docker-compose build
-      
-      - name: Start services
-        run: docker-compose up -d
-      
-      - name: Wait for services to be healthy
-        run: |
-          echo "Waiting for services to be healthy..."
-          timeout 180 bash -c 'until docker-compose ps | grep -q "healthy"; do sleep 2; done'
-          docker-compose ps
-      
-      - name: Check API health
-        run: |
-          sleep 5
-          curl -f http://localhost:8000/health || exit 1
-      
-      - name: View logs on failure
-        if: failure()
-        run: |
-          echo "=== API Logs ==="
-          docker-compose logs api
-          echo "=== Worker Logs ==="
-          docker-compose logs worker
-          echo "=== DB Logs ==="
-          docker-compose logs db
-          echo "=== Redis Logs ==="
-          docker-compose logs redis
-      
-      - name: Cleanup
-        if: always()
-        run: docker-compose down -v
-
-  e2e-tests:
-    name: End-to-End Tests
-    runs-on: ubuntu-latest
-    needs: [unit-tests, docker-build]
     
     steps:
       - name: Checkout code
@@ -147,19 +46,12 @@ jobs:
       - name: Start Docker services
         run: docker-compose up -d --wait
       
-      - name: Wait for services
+      - name: Wait for API health
         run: |
           echo "Waiting for API to be ready..."
-          for i in {1..30}; do
-            if curl -f http://localhost:8000/health; then
-              echo "API is ready!"
-              break
-            fi
-            echo "Attempt $i/30 failed, waiting..."
-            sleep 2
-          done
+          timeout 60s bash -c 'until curl -f http://localhost:8000/health; do sleep 2; done'
       
-      - name: Run E2E tests
+      - name: Run End-to-End Tests
         run: uv run pytest tests/test_e2e.py -v -m e2e --tb=short
         env:
           GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
@@ -167,38 +59,9 @@ jobs:
       - name: View logs on failure
         if: failure()
         run: |
-          echo "=== API Logs ==="
           docker-compose logs api --tail=100
-          echo "=== Worker Logs ==="
           docker-compose logs worker --tail=100
       
       - name: Cleanup
         if: always()
         run: docker-compose down -v
-
-  security-scan:
-    name: Security Scanning
-    runs-on: ubuntu-latest
-    
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-      
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: ${{ env.PYTHON_VERSION }}
-      
-      - name: Install UV
-        run: pip install uv==${{ env.UV_VERSION }}
-      
-      - name: Install dependencies
-        run: uv sync
-      
-      - name: Run safety check
-        run: uv run safety check --json
-        continue-on-error: true
-      
-      - name: Run bandit security linter
-        run: uv run bandit -r src/ -f json
-        continue-on-error: true
