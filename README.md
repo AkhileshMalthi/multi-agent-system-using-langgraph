@@ -1,146 +1,120 @@
-# Multi-Agent System Using LangGraph
+# Multi-Agent System using LangGraph
 
-[![CI/CD Pipeline](https://github.com/AkhileshMalthi/multi-agent-system-using-langgraph/actions/workflows/ci.yml/badge.svg)](https://github.com/AkhileshMalthi/multi-agent-system-using-langgraph/actions/workflows/ci.yml)
+A production-ready, general-purpose multi-agent system using LangGraph for orchestration, Redis for state management, Celery for asynchronous tasks, and FastAPI for the backend.
 
-A scalable multi-agent orchestration system built with modern Python tools.
+![Architecture Overview](https://img.shields.io/badge/Architecture-Event%20Driven-blue) ![Python](https://img.shields.io/badge/Python-3.11+-green) ![FastAPI](https://img.shields.io/badge/FastAPI-0.109+-teal)
 
-## 🚀 Tech Stack
+## Overview
 
-- **Framework**: [LangGraph](https://github.com/langchain-ai/langgraph) - Agent orchestration with human-in-the-loop
-- **API**: [FastAPI](https://fastapi.tiangolo.com/) - High-performance async web framework  
-- **Task Queue**: [Celery](https://docs.celeryq.dev/) - Distributed task processing
-- **Database**: PostgreSQL with SQLAlchemy & asyncpg
-- **Cache/Broker**: Redis
-- **LLM Providers**: Groq (default), OpenAI via LangChain
-- **Package Manager**: [uv](https://github.com/astral-sh/uv) - Ultra-fast Python package installer
+This system allows **collaborative AI agents** to work together to solve complex tasks. Unlike simple chatbots, this framework orchestrates specialized agents—a **Research Agent** that gathers information and a **Writing Agent** that synthesizes it—to produce high-quality, comprehensive outputs for **any** user request.
 
-## 📁 Project Structure
+**Key Capabilities:**
+- **Dynamic Research**: Automatically identifies research topics from your prompt (e.g., "Compare X vs Y", "How to install Z").
+- **Adaptive Writing**: intelligent template selection for Comparisons, Tutorials, Analyses, and Summaries.
+- **Human-in-the-Loop**: Inspect and approve drafts before they are finalized.
+- **Production Architecture**: Scalable, async design with persistent state and real-time updates.
 
-```
-.
-├── src/
-│   ├── api/          # FastAPI application
-│   │   ├── main.py         # App entrypoint with WebSocket
-│   │   ├── schemas.py      # Pydantic models
-│   │   ├── websocket.py    # Real-time updates
-│   │   └── routes/         # API endpoints
-│   ├── agents/       # LangGraph workflow
-│   │   ├── state.py        # Workflow state definition
-│   │   ├── tools.py        # Search tools
-│   │   ├── research_agent.py
-│   │   ├── writing_agent.py
-│   │   └── workflow.py     # LangGraph graph
-│   ├── worker/       # Celery workers
-│   │   └── celery_app.py   # Background tasks
-│   ├── database/     # Database layer
-│   │   ├── models.py       # SQLAlchemy models
-│   │   ├── connection.py   # Async session
-│   │   └── crud.py         # CRUD operations
-│   └── shared/       # Shared utilities
-│       ├── redis_client.py # Redis workspace
-│       └── logger.py       # JSON structured logging
-├── tests/            # Test suite
-├── logs/             # Application logs
-├── Dockerfile        # Multi-stage Docker build with uv
-├── docker-compose.yml # Full stack orchestration
-└── pyproject.toml    # Python dependencies and project metadata
+## Architecture
+
+```mermaid
+graph TB
+    subgraph "General Purpose Workflow"
+        User[User] -->|Prompt| API[FastAPI]
+        API -->|Task| Workflow[LangGraph Engine]
+        
+        Workflow --> Analyzer[Prompt Analyzer<br/>(LLM-Guided)]
+        Analyzer -->|Topics + Goal| Research[Research Agent]
+        
+        Research -->|Dynamic Queries| Tools[Tool Registry]
+        Tools -->|Real Info| Workspace[(Redis Shared Memory)]
+        
+        Workspace --> Writing[Writing Agent]
+        Writing -->|Draft| Approval[Human Approval]
+        
+        Approval -->|Approved| Result[Final Output]
+    end
+    
+    style Analyzer fill:#95e1d3
+    style Tools fill:#4ecdc4
 ```
 
-## 🛠️ Development Setup
+See [ARCHITECTURE.md](ARCHITECTURE.md) for detailed diagrams and component breakdown.
+
+## Quick Start
 
 ### Prerequisites
-- Python 3.13+
-- Docker & Docker Compose (for containerized setup)
-- [uv](https://github.com/astral-sh/uv) package manager
+- Docker & Docker Compose
+- API Key for Groq or OpenAI
 
-### Local Development
-
-```bash
-# Install dependencies
-uv sync --all-extras
-
-# Activate virtual environment
-source .venv/bin/activate  # Linux/Mac
-.venv\Scripts\activate     # Windows
-
-# Run API server
-uvicorn src.api.main:app --reload
-
-# Run Celery worker (in another terminal)
-celery -A src.worker.celery_app worker --loglevel=info
-```
-
-### Docker Setup
-
-```bash
-# Start all services
-docker-compose up -d
-
-# View logs
-docker-compose logs -f api
-
-# Stop services
-docker-compose down
-```
-
-## 🔧 Configuration
-
-Copy `.env.example` to `.env` and configure:
-
+### 1. Configure Environment
+Copy the example file and add your API key:
 ```bash
 cp .env.example .env
+# Edit .env:
+# LLM_API_KEY=your_key_here
 ```
 
-Key environment variables:
-- `LLM_API_KEY` - Your OpenAI API key
-- `DATABASE_URL` - PostgreSQL connection string
-- `REDIS_URL` - Redis connection for shared state
-- `CELERY_BROKER_URL` - Redis URL for Celery
+### 2. Start Services
+Launch the entire stack (API, DB, Redis, Worker):
+```bash
+docker-compose up -d
+```
 
-## 📚 API Endpoints
+### 3. Create a Task
+The system handles natural language prompts automatically:
 
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| GET | `/health` | Health check |
-| POST | `/api/v1/tasks` | Create new task (202 Accepted) |
-| GET | `/api/v1/tasks/{id}` | Get task status |
-| POST | `/api/v1/tasks/{id}/approve` | Approve/reject task |
-| WS | `/ws/tasks/{id}` | Real-time task updates |
+**Comparison Task:**
+```bash
+curl -X POST http://localhost:8000/api/v1/tasks \
+  -H "Content-Type: application/json" \
+  -d '{"prompt": "Compare Redis vs PostgreSQL for caching"}'
+```
 
-Once running, visit:
-- API Docs: http://localhost:8000/docs
-- Health Check: http://localhost:8000/health
+**Tutorial Task:**
+```bash
+curl -X POST http://localhost:8000/api/v1/tasks \
+  -H "Content-Type: application/json" \
+  -d '{"prompt": "Create a beginner tutorial for Docker setup"}'
+```
 
-## 🔄 CI/CD Pipeline
+**Analysis Task:**
+```bash
+curl -X POST http://localhost:8000/api/v1/tasks \
+  -H "Content-Type: application/json" \
+  -d '{"prompt": "Analyze microservices vs monolithic architecture"}'
+```
 
-The project uses GitHub Actions for continuous integration and deployment with 5 jobs:
+### 4. Monitor & Approve
+Check task status and approve the draft:
+```bash
+# Get Status
+curl http://localhost:8000/api/v1/tasks/{task_id}
 
-1. **Lint** - Code quality checks with Ruff
-2. **Unit Tests** - Fast unit/integration tests (excluding E2E)
-3. **Docker Build** - Build and verify all services
-4. **E2E Tests** - Full workflow tests with Docker
-5. **Security Scan** - Dependency scanning with Safety and Bandit
+# Approve
+curl -X POST http://localhost:8000/api/v1/tasks/{task_id}/approve \
+  -H "Content-Type: application/json" \
+  -d '{"approved": true}'
+```
 
-**Setup CI secrets:**
-- `GROQ_API_KEY` - Required for E2E tests
+## Technology Stack
 
-## 🧪 Testing
+| Component | Technology | Role |
+|-----------|------------|------|
+| **Orchestration** | **LangGraph** | Manages agent state and workflow structure |
+| **API** | **FastAPI** | Async REST endpoints & WebSockets |
+| **Queue** | **Celery** | Asynchronous task processing |
+| **Database** | **PostgreSQL** | Persistent storage for tasks and results |
+| **State/Cache** | **Redis** | High-speed agent workspace & broker |
+| **LLM** | **LangChain** | LLM abstraction (OpenAI / Groq) |
+
+## Testing
+
+Run the end-to-end test suite to verify system health:
 
 ```bash
-# Run unit tests only (fast, no Docker required)
-uv run pytest -m "not e2e" -v
-
-# Run with coverage
-uv run pytest -m "not e2e" --cov=src
-
-# Run E2E tests (requires Docker services running)
-docker-compose up -d
-uv run pytest tests/test_e2e.py -v
-
-# Run all tests
-uv run pytest tests/ -v
+docker-compose exec api pytest tests/test_e2e.py -v
 ```
 
-## 📝 License
+## License
 
-See [LICENSE](LICENSE) file for details.
+MIT License.
