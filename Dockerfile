@@ -48,7 +48,7 @@ RUN mkdir -p logs
 # Ensure the app uses the virtual environment automatically
 ENV PATH="/app/.venv/bin:$PATH"
 # Set Python path so 'src' modules are discoverable
-ENV PYTHONPATH=/app/src
+ENV PYTHONPATH=/app
 
 # Default command (will be overridden in docker-compose)
 # Note: Replace this with your actual entry point once you create it
